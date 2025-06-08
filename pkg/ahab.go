@@ -10,14 +10,14 @@ import (
 )
 
 
-func GetDockerFiles(dir string) *script.Pipe {
+func getDockerFiles(dir string) *script.Pipe {
 	return script.FindFiles(dir).
 		MatchRegexp(regexp.MustCompile(`\.ya?ml$`)).
 		RejectRegexp(regexp.MustCompile(`/(?:\.[^/]+)/`)). // this is because hidden directories could have yaml in them which doesn't compile and then breaks
 		RejectRegexp(regexp.MustCompile(`/kube(/|$)`))     // similarly, we don't want to run docker-compose on kube files
 }
 
-func GetDockerDir() (string, error) {
+func getDockerDir() (string, error) {
 	if dir := os.Getenv("DOCKER_DIR"); dir != "" {
 		if _, err := os.Stat(dir); err == nil {
 			return dir, nil
@@ -31,14 +31,14 @@ func runComposeCommands(args ...string) *script.Pipe {
 	return script.Exec(strings.Join(args, " "))
 }
 
-func FindComposeFiles(action string) ([]string, error) {
-    dir, err := GetDockerDir()
+func findComposeFiles(action string) ([]string, error) {
+    dir, err := getDockerDir()
     if err != nil {
         return nil, err
     }
 
     fmt.Printf("Finding Dockerfiles to %s...\n", action)
-    dockerFiles := GetDockerFiles(dir)
+    dockerFiles := getDockerFiles(dir)
     output, err := dockerFiles.String()
     if err != nil {
         return nil, err
@@ -53,7 +53,7 @@ func FindComposeFiles(action string) ([]string, error) {
     return files, nil
 }
 
-func StartComposeFiles(files []string) {
+func startComposeFiles(files []string) {
 	fmt.Println("Starting docker-compose for each file...")
 	for _, file := range files {
 		fmt.Printf("Running: docker-compose -f %s up -d\n", file)
@@ -64,7 +64,7 @@ func StartComposeFiles(files []string) {
 	}
 }
 
-func UpdateComposeFiles(files []string) {
+func updateComposeFiles(files []string) {
 	fmt.Println("Updating docker-compose for each file...")
 	for _, file := range files {
 		fmt.Printf("Running: docker-compose -f %s pull\n", file)
@@ -75,7 +75,7 @@ func UpdateComposeFiles(files []string) {
 	}
 }
 
-func StopComposeFiles(files []string) {
+func stopComposeFiles(files []string) {
 	fmt.Println("Stopping docker-compose for each file...")
 	for _, file := range files {
 		fmt.Printf("Running: docker-compose -f %s down\n", file)
@@ -86,7 +86,7 @@ func StopComposeFiles(files []string) {
 	}
 }
 
-func RestartComposeFiles(files []string) {
+func restartComposeFiles(files []string) {
 	fmt.Println("Restarting docker-compose for each file...")
 	for _, file := range files {
 		fmt.Printf("Running: docker-compose -f %s restart\n", file)
@@ -98,40 +98,40 @@ func RestartComposeFiles(files []string) {
 }
 
 func RunAllCompose() error {
-	files, err := FindComposeFiles("start")
+	files, err := findComposeFiles("start")
 	if err != nil || len(files) == 0 {
 		return err
 	}
-	StartComposeFiles(files)
+	startComposeFiles(files)
 	return nil
 }
 
 func UpdateAllCompose() error {
-	files, err := FindComposeFiles("update")
+	files, err := findComposeFiles("update")
 	if err != nil || len(files) == 0 {
 		return err
 	}
 
-	UpdateComposeFiles(files)
+	updateComposeFiles(files)
 	return nil
 }
 
 func StopAllCompose() error {
-	files, err := FindComposeFiles("stop")
+	files, err := findComposeFiles("stop")
 	if err != nil || len(files) == 0 {
 		return err
 	}
 
-	StopComposeFiles(files)
+	stopComposeFiles(files)
 	return nil
 }
 
 func RestartAllCompose() error {
-	files, err := FindComposeFiles("restart")
+	files, err := findComposeFiles("restart")
 	if err != nil || len(files) == 0 {
 		return err
 	}
 
-	RestartComposeFiles(files)
+	restartComposeFiles(files)
 	return nil
 }
