@@ -31,6 +31,28 @@ func runComposeCommands(args ...string) *script.Pipe {
 	return script.Exec(strings.Join(args, " "))
 }
 
+func FindComposeFiles(action string) ([]string, error) {
+    dir, err := GetDockerDir()
+    if err != nil {
+        return nil, err
+    }
+
+    fmt.Printf("Finding Dockerfiles to %s...\n", action)
+    dockerFiles := GetDockerFiles(dir)
+    output, err := dockerFiles.String()
+    if err != nil {
+        return nil, err
+    }
+
+    files := strings.Fields(output)
+    if len(files) == 0 {
+        fmt.Printf("No docker-compose files found to %s.\n", action)
+        return nil, nil
+    }
+
+    return files, nil
+}
+
 func StartComposeFiles(files []string) {
 	fmt.Println("Starting docker-compose for each file...")
 	for _, file := range files {
@@ -76,45 +98,18 @@ func RestartComposeFiles(files []string) {
 }
 
 func RunAllCompose() error {
-	dir, err := GetDockerDir()
-	if err != nil {
+	files, err := FindComposeFiles("start")
+	if err != nil || len(files) == 0 {
 		return err
 	}
-
-	fmt.Println("Finding Dockerfiles...")
-	dockerFiles := GetDockerFiles(dir)
-	output, err := dockerFiles.String()
-	if err != nil {
-		return err
-	}
-
-	files := strings.Fields(output)
-	if len(files) == 0 {
-		fmt.Println("No docker-compose files found.")
-		return nil
-	}
-
 	StartComposeFiles(files)
 	return nil
 }
 
 func UpdateAllCompose() error {
-	dir, err := GetDockerDir()
-	if err != nil {
+	files, err := FindComposeFiles("update")
+	if err != nil || len(files) == 0 {
 		return err
-	}
-
-	fmt.Println("Finding Dockerfiles for update...")
-	dockerFiles := GetDockerFiles(dir)
-	output, err := dockerFiles.String()
-	if err != nil {
-		return err
-	}
-
-	files := strings.Fields(output)
-	if len(files) == 0 {
-		fmt.Println("No docker-compose files found for update.")
-		return nil
 	}
 
 	UpdateComposeFiles(files)
@@ -122,22 +117,9 @@ func UpdateAllCompose() error {
 }
 
 func StopAllCompose() error {
-	dir, err := GetDockerDir()
-	if err != nil {
+	files, err := FindComposeFiles("stop")
+	if err != nil || len(files) == 0 {
 		return err
-	}
-
-	fmt.Println("Finding Dockerfiles to stop...")
-	dockerFiles := GetDockerFiles(dir)
-	output, err := dockerFiles.String()
-	if err != nil {
-		return err
-	}
-
-	files := strings.Fields(output)
-	if len(files) == 0 {
-		fmt.Println("No docker-compose files found to stop.")
-		return nil
 	}
 
 	StopComposeFiles(files)
@@ -145,22 +127,9 @@ func StopAllCompose() error {
 }
 
 func RestartAllCompose() error {
-	dir, err := GetDockerDir()
-	if err != nil {
+	files, err := FindComposeFiles("restart")
+	if err != nil || len(files) == 0 {
 		return err
-	}
-
-	fmt.Println("Finding Dockerfiles to restart...")
-	dockerFiles := GetDockerFiles(dir)
-	output, err := dockerFiles.String()
-	if err != nil {
-		return err
-	}
-
-	files := strings.Fields(output)
-	if len(files) == 0 {
-		fmt.Println("No docker-compose files found to restart.")
-		return nil
 	}
 
 	RestartComposeFiles(files)
