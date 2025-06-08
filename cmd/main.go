@@ -2,36 +2,50 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
-	"strings"
 
-	"github.com/bitfield/script"
-	"github.com/josh-allan/ahab"
+	ahab "github.com/josh-allan/ahab/pkg"
+	"github.com/spf13/cobra"
 )
 
+var rootCmd = &cobra.Command{
+	Use:   "ahab",
+	Short: "Ahoy, Ahab!",
+	Long:  "Ahab is a tool to manage Docker Compose files.",
+}
 
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start all Docker Compose files",
+	Long:  "This command finds all Docker Compose files in the specified directory and starts them.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ahab.RunAllCompose(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
+}
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update all Docker Compose files",
+	Long:  "This command finds all Docker Compose files in the specified directory and updates them.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ahab.UpdateAllCompose(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
+}
+
+func init() {
+    rootCmd.AddCommand(startCmd)
+    rootCmd.AddCommand(updateCmd)
+}
 
 func main() {
-
-	dir, err := ahab.getDockerDir()
-	if err != nil {
-	fmt.Println("Error:", err)
-	os.Exit(1)
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("Error executing command: %v", err)
 	}
-
-	fmt.Println("Finding Dockerfiles...")
-	script.FindFiles(dir)
-
-	fmt.Println("We only care about the files that end with .yaml or .yml")
-
-    dockerFiles := getDockerFiles(dir)
-    output, err := dockerFiles.String()
-    if err != nil {
-        fmt.Println("Error:", err)
-        return
-    }
-
-    files := strings.Fields(output) // splits on whitespace/newlines
-
 }
