@@ -1,5 +1,5 @@
 # Ahab
-A CLI helper for Docker Compose.
+A CLI helper for Docker Compose. 
 
 Ahab is a simple command line tool to manage Docker Compose projects. It has four primary functions:
 
@@ -7,6 +7,8 @@ Ahab is a simple command line tool to manage Docker Compose projects. It has fou
 - Stop all containers
 - Update all containers
 - Restart all containers.
+
+### Usage
 
 Usage is simple:
 
@@ -25,4 +27,6 @@ I wrote this because all of my docker containers are split into discrete modules
 
 This convention massively helps with organisation and segmentation, however it makes managing containers in bulk tedious.
 
-Solutions such as Ouroborus (no longer maintained), or Watchtower will automatically update containers when a new image is pushed. This was born to reduce the effort required to manage container updates.
+Solutions such as Ouroborus (no longer maintained), or Watchtower will automatically update containers when a new image is pushed. This carries risk of introducing uncontrolled breaking changes. 
+
+This was born to reduce the effort required to manage container updates.
