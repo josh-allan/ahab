@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/bitfield/script"
-	"github.com/josh-allan/ahab/pkg/ahab"
 )
 
 func GetDockerFiles(dir string) *script.Pipe {
