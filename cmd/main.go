@@ -39,9 +39,35 @@ var updateCmd = &cobra.Command{
 	},
 }
 
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop all Docker Compose files",
+	Long:  "This command finds all Docker Compose files in the specified directory and stops them.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ahab.StopAllCompose(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var restartCmd = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart all Docker Compose files",
+	Long:  "This command finds all Docker Compose files in the specified directory and restarts them.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ahab.RestartAllCompose(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
     rootCmd.AddCommand(startCmd)
     rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(restartCmd)
 }
 
 func main() {

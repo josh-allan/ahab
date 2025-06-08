@@ -53,6 +53,28 @@ func UpdateComposeFiles(files []string) {
 	}
 }
 
+func StopComposeFiles(files []string) {
+	fmt.Println("Stopping docker-compose for each file...")
+	for _, file := range files {
+		fmt.Printf("Running: docker-compose -f %s down\n", file)
+		_, err := runComposeCommands("docker-compose", "-f", file, "down").Stdout()
+		if err != nil {
+			fmt.Printf("Error stopping docker-compose for %s: %v\n", file, err)
+		}
+	}
+}
+
+func RestartComposeFiles(files []string) {
+	fmt.Println("Restarting docker-compose for each file...")
+	for _, file := range files {
+		fmt.Printf("Running: docker-compose -f %s restart\n", file)
+		_, err := runComposeCommands("docker-compose", "-f", file, "restart").Stdout()
+		if err != nil {
+			fmt.Printf("Error restarting docker-compose for %s: %v\n", file, err)
+		}
+	}
+}
+
 func RunAllCompose() error {
 	dir, err := GetDockerDir()
 	if err != nil {
@@ -96,5 +118,51 @@ func UpdateAllCompose() error {
 	}
 
 	UpdateComposeFiles(files)
+	return nil
+}
+
+func StopAllCompose() error {
+	dir, err := GetDockerDir()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Finding Dockerfiles to stop...")
+	dockerFiles := GetDockerFiles(dir)
+	output, err := dockerFiles.String()
+	if err != nil {
+		return err
+	}
+
+	files := strings.Fields(output)
+	if len(files) == 0 {
+		fmt.Println("No docker-compose files found to stop.")
+		return nil
+	}
+
+	StopComposeFiles(files)
+	return nil
+}
+
+func RestartAllCompose() error {
+	dir, err := GetDockerDir()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Finding Dockerfiles to restart...")
+	dockerFiles := GetDockerFiles(dir)
+	output, err := dockerFiles.String()
+	if err != nil {
+		return err
+	}
+
+	files := strings.Fields(output)
+	if len(files) == 0 {
+		fmt.Println("No docker-compose files found to restart.")
+		return nil
+	}
+
+	RestartComposeFiles(files)
 	return nil
 }
