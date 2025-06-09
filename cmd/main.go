@@ -64,8 +64,8 @@ var restartCmd = &cobra.Command{
 }
 
 func init() {
-    rootCmd.AddCommand(startCmd)
-    rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
 }
