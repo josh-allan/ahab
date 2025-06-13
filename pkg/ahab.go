@@ -1,14 +1,39 @@
 package ahab
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/bitfield/script"
 )
 
+func readIgnoreFile(dir string) (map[string]struct{}, error) {
+    ignorePath := filepath.Join(dir, ".ahabignore")
+    file, err := os.Open(ignorePath)
+    if err != nil {
+        // If the file doesn't exist, just return an empty set
+        if os.IsNotExist(err) {
+            return map[string]struct{}{}, nil
+        }
+        return nil, err
+    }
+    defer file.Close()
+
+    ignores := make(map[string]struct{})
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        ignores[line] = struct{}{}
+    }
+    return ignores, scanner.Err()
+}
 
 func getDockerFiles(dir string) *script.Pipe {
 	return script.FindFiles(dir).
@@ -50,7 +75,20 @@ func findComposeFiles(action string) ([]string, error) {
         return nil, nil
     }
 
-    return files, nil
+    ignores, err := readIgnoreFile(dir)
+    if err != nil {
+        return nil, err
+    }
+
+    var filtered []string
+    for _, file := range files {
+        rel, _ := filepath.Rel(dir, file)
+        if _, skip := ignores[rel]; !skip {
+            filtered = append(filtered, file)
+        }
+    }
+
+    return filtered, nil
 }
 
 func startComposeFiles(files []string) {
