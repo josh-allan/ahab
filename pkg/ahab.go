@@ -84,8 +84,10 @@ func findComposeFiles(action string) ([]string, error) {
     for _, file := range files {
         rel, _ := filepath.Rel(dir, file)
         if _, skip := ignores[rel]; !skip {
-            filtered = append(filtered, file)
+			fmt.Printf("Skipping %s (ignored by .ahabignore)\n", rel)
+			continue
         }
+		filtered = append(filtered, file)
     }
 
     return filtered, nil
