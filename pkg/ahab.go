@@ -12,35 +12,34 @@ import (
 )
 
 func readIgnoreFile(dir string) (map[string]struct{}, error) {
-	ignorePath := filepath.Join(dir, ".ahabignore")
-	file, err := os.Open(ignorePath)
-	if err != nil {
-		// If the file doesn't exist, just return an empty set
-		if os.IsNotExist(err) {
-			return map[string]struct{}{}, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
+    ignorePath := filepath.Join(dir, ".ahabignore")
+    file, err := os.Open(ignorePath)
+    if err != nil {
+        // If the file doesn't exist, just return an empty set
+        if os.IsNotExist(err) {
+            return map[string]struct{}{}, nil
+        }
+        return nil, err
+    }
+    defer file.Close()
 
-	ignores := make(map[string]struct{})
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		ignores[line] = struct{}{}
-	}
-	return ignores, scanner.Err()
+    ignores := make(map[string]struct{})
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        ignores[line] = struct{}{}
+    }
+    return ignores, scanner.Err()
 }
 
 func getDockerFiles(dir string) *script.Pipe {
 	return script.FindFiles(dir).
 		MatchRegexp(regexp.MustCompile(`\.ya?ml$`)).
-		RejectRegexp(regexp.MustCompile(`/(?:\.[^/]+)/`)).     // this is because hidden directories could have yaml in them which doesn't compile and then breaks
-		RejectRegexp(regexp.MustCompile(`/kube(/|$)`)).        // similarly, we don't want to run docker-compose on kube files
-		RejectRegexp(regexp.MustCompile(`/provisioning(/|$)`)) // also ignore grafana provisioning files
+		RejectRegexp(regexp.MustCompile(`/(?:\.[^/]+)/`)). // this is because hidden directories could have yaml in them which doesn't compile and then breaks
+		RejectRegexp(regexp.MustCompile(`/kube(/|$)`))     // similarly, we don't want to run docker-compose on kube files
 }
 
 func getDockerDir() (string, error) {
@@ -58,40 +57,40 @@ func runComposeCommands(args ...string) *script.Pipe {
 }
 
 func findComposeFiles(action string) ([]string, error) {
-	dir, err := getDockerDir()
-	if err != nil {
-		return nil, err
-	}
+    dir, err := getDockerDir()
+    if err != nil {
+        return nil, err
+    }
 
-	fmt.Printf("Finding Dockerfiles to %s...\n", action)
-	dockerFiles := getDockerFiles(dir)
-	output, err := dockerFiles.String()
-	if err != nil {
-		return nil, err
-	}
+    fmt.Printf("Finding Dockerfiles to %s...\n", action)
+    dockerFiles := getDockerFiles(dir)
+    output, err := dockerFiles.String()
+    if err != nil {
+        return nil, err
+    }
 
-	files := strings.Fields(output)
-	if len(files) == 0 {
-		fmt.Printf("No docker-compose files found to %s.\n", action)
-		return nil, nil
-	}
+    files := strings.Fields(output)
+    if len(files) == 0 {
+        fmt.Printf("No docker-compose files found to %s.\n", action)
+        return nil, nil
+    }
 
-	ignores, err := readIgnoreFile(dir)
-	if err != nil {
-		return nil, err
-	}
+    ignores, err := readIgnoreFile(dir)
+    if err != nil {
+        return nil, err
+    }
 
-	var filtered []string
-	for _, file := range files {
-		rel, _ := filepath.Rel(dir, file)
-		if _, skip := ignores[rel]; skip {
+    var filtered []string
+    for _, file := range files {
+        rel, _ := filepath.Rel(dir, file)
+        if _, skip := ignores[rel]; !skip {
 			fmt.Printf("Skipping %s (ignored by .ahabignore)\n", rel)
 			continue
-		}
+        }
 		filtered = append(filtered, file)
-	}
+    }
 
-	return filtered, nil
+    return filtered, nil
 }
 
 func startComposeFiles(files []string) {
