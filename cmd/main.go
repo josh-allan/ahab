@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/charmbracelet/fang"
 	ahab "github.com/josh-allan/ahab/pkg"
 	"github.com/spf13/cobra"
 )
@@ -71,7 +73,7 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := fang.Execute(context.Background(), rootCmd); err != nil {
 		log.Fatalf("Error executing command: %v", err)
 	}
 }
