@@ -16,7 +16,8 @@ Usage is simple:
 1. `go mod tidy`
 2. Compile the binary: `go build -o ahab ./cmd`
 3. Set `DOCKER_DIR` environment variable.
-4. Enjoy!
+4. Create a .ahabignore file in the docker directory
+5. Enjoy!
 
 ### Why?
 
