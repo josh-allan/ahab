@@ -65,11 +65,24 @@ var restartCmd = &cobra.Command{
 	},
 }
 
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all Docker Compose files",
+	Long:  "This dry-run command lists all Docker Compose files found in the specified directory, respecting the .ahabignore file to filter out ignored files.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ahab.ListIgnoreFiles(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
+	rootCmd.AddCommand(listCmd)
 }
 
 func main() {

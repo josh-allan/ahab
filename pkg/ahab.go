@@ -83,15 +83,26 @@ func findComposeFiles(action string) ([]string, error) {
 
 	var filtered []string
 	for _, file := range files {
-		rel, _ := filepath.Rel(dir, file)
-		if _, skip := ignores[rel]; skip {
-			fmt.Printf("Skipping %s (ignored by .ahabignore)\n", rel)
+		if _, skip := ignores[file]; skip {
+			fmt.Printf("Skipping %s (ignored by .ahabignore)\n", file)
 			continue
 		}
 		filtered = append(filtered, file)
 	}
 
 	return filtered, nil
+}
+
+func ListIgnoreFiles() error {
+	files, err := findComposeFiles("--dry-run start")
+	if err != nil || len(files) == 0 {
+		return err
+	}
+	fmt.Println("Listing docker-compose files...")
+	for _, file := range files {
+		fmt.Println(file)
+	}
+	return nil
 }
 
 func startComposeFiles(files []string) {
