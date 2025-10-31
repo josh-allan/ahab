@@ -19,6 +19,8 @@ Usage is simple:
 4. Create a .ahabignore file in the docker directory
 5. Enjoy!
 
+Note: The ignore file expects absolute paths.
+
 ### Why?
 
 I wrote this because all of my docker containers are split into discrete modules. They also adhere to the following directory and naming convention:
@@ -33,4 +35,4 @@ Solutions such as Ouroborus (no longer maintained), or Watchtower will automatic
 
 This was born to reduce the effort required to manage container updates.
 
-Note: The ignore file expects absolute paths.
+
