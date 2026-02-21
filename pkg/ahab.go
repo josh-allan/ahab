@@ -105,18 +105,19 @@ func ListIgnoreFiles() error {
 	return nil
 }
 
-func startComposeFiles(files []string) {
-	fmt.Println("Starting docker-compose for each file...")
+func runOnFiles(files []string, action string, cmdArgs []string) {
+	fmt.Printf("%s docker-compose for each file...\n", action)
 	var wg sync.WaitGroup
 
 	for _, file := range files {
 		wg.Add(1)
 		go func(f string) {
 			defer wg.Done()
-			fmt.Printf("Running: docker-compose -f %s up -d\n", f)
-			_, err := runComposeCommands("docker-compose", "-f", f, "up", "-d").Stdout()
+			args := append([]string{"docker-compose", "-f", f}, cmdArgs...)
+			fmt.Printf("Running: %s\n", strings.Join(args, " "))
+			_, err := runComposeCommands(args...).Stdout()
 			if err != nil {
-				fmt.Printf("Error running docker-compose for %s: %v\n", f, err)
+				fmt.Printf("Error running %s for %s: %v\n", action, f, err)
 			}
 		}(file)
 	}
@@ -124,98 +125,16 @@ func startComposeFiles(files []string) {
 	wg.Wait()
 }
 
-func updateComposeFiles(files []string) {
-	fmt.Println("Updating docker-compose for each file...")
-	var wg sync.WaitGroup
-
-	for _, file := range files {
-		wg.Add(1)
-		go func(f string) {
-			defer wg.Done()
-			fmt.Printf("Running: docker-compose -f %s pull\n", f)
-			_, err := runComposeCommands("docker-compose", "-f", f, "pull").Stdout()
-			if err != nil {
-				fmt.Printf("Error updating docker-compose for %s: %v\n", f, err)
-			}
-		}(file)
-	}
-
-	wg.Wait()
-}
-
-func stopComposeFiles(files []string) {
-	fmt.Println("Stopping docker-compose for each file...")
-	var wg sync.WaitGroup
-
-	for _, file := range files {
-		wg.Add(1)
-		go func(f string) {
-			defer wg.Done()
-			fmt.Printf("Running: docker-compose -f %s stop\n", f)
-			_, err := runComposeCommands("docker-compose", "-f", f, "stop").Stdout()
-			if err != nil {
-				fmt.Printf("Error stopping docker-compose for %s: %v\n", f, err)
-			}
-		}(file)
-	}
-
-	wg.Wait()
-}
-
-func restartComposeFiles(files []string) {
-	fmt.Println("Restarting docker-compose for each file...")
-	var wg sync.WaitGroup
-
-	for _, file := range files {
-		wg.Add(1)
-		go func(f string) {
-			defer wg.Done()
-			fmt.Printf("Running: docker-compose -f %s restart\n", f)
-			_, err := runComposeCommands("docker-compose", "-f", f, "restart").Stdout()
-			if err != nil {
-				fmt.Printf("Error restarting docker-compose for %s: %v\n", f, err)
-			}
-		}(file)
-	}
-
-	wg.Wait()
-}
-
-func RunAllCompose() error {
-	files, err := findComposeFiles("start")
+func runAction(action string, cmdArgs ...string) error {
+	files, err := findComposeFiles(action)
 	if err != nil || len(files) == 0 {
 		return err
 	}
-	startComposeFiles(files)
+	runOnFiles(files, action, cmdArgs)
 	return nil
 }
 
-func UpdateAllCompose() error {
-	files, err := findComposeFiles("update")
-	if err != nil || len(files) == 0 {
-		return err
-	}
-
-	updateComposeFiles(files)
-	return nil
-}
-
-func StopAllCompose() error {
-	files, err := findComposeFiles("stop")
-	if err != nil || len(files) == 0 {
-		return err
-	}
-
-	stopComposeFiles(files)
-	return nil
-}
-
-func RestartAllCompose() error {
-	files, err := findComposeFiles("restart")
-	if err != nil || len(files) == 0 {
-		return err
-	}
-
-	restartComposeFiles(files)
-	return nil
-}
+func RunAllCompose() error     { return runAction("start", "up", "-d") }
+func UpdateAllCompose() error  { return runAction("update", "pull") }
+func StopAllCompose() error    { return runAction("stop", "stop") }
+func RestartAllCompose() error { return runAction("restart", "restart") }
