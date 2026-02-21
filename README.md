@@ -16,7 +16,10 @@ Usage is simple:
 1. `go mod tidy`
 2. Compile the binary: `go build -o ahab ./cmd`
 3. Set `DOCKER_DIR` environment variable.
-4. Enjoy!
+4. Create a .ahabignore file in the docker directory
+5. Enjoy!
+
+Note: The ignore file expects absolute paths.
 
 ### Why?
 
@@ -32,4 +35,4 @@ Solutions such as Ouroborus (no longer maintained), or Watchtower will automatic
 
 This was born to reduce the effort required to manage container updates.
 
-Note: The ignore file expects absolute paths.
+
