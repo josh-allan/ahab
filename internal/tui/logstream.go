@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"context"
+	"io"
 	"os/exec"
 	"sync"
 )
@@ -59,6 +60,7 @@ type logStreamer struct {
 func startLogStreamer(file string) *logStreamer {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", file, "logs", "-f", "--tail", "100")
+	cmd.Stderr = io.Discard
 	return &logStreamer{
 		cmd:    cmd,
 		cancel: cancel,
@@ -75,10 +77,20 @@ func (ls *logStreamer) run() error {
 	if err := ls.cmd.Start(); err != nil {
 		return err
 	}
+	// Reaper: must call Wait() to avoid zombie processes.
+	go func() {
+		_ = ls.cmd.Wait()
+	}()
 	scanner := bufio.NewScanner(stdout)
+	const maxCapacity = 512 * 1024 // 512KB
+	buf := make([]byte, maxCapacity)
+	scanner.Buffer(buf, maxCapacity)
 	go func() {
 		for scanner.Scan() {
 			ls.buffer.append(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			ls.buffer.append("[log stream error: " + err.Error() + "]")
 		}
 	}()
 	return nil
@@ -90,6 +102,6 @@ func (ls *logStreamer) stop() {
 		ls.cancel()
 	}
 	if ls.cmd != nil && ls.cmd.Process != nil {
-		ls.cmd.Process.Kill()
+		_ = ls.cmd.Process.Kill()
 	}
 }

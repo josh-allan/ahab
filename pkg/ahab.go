@@ -3,8 +3,10 @@ package ahab
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -149,7 +151,10 @@ func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	rules, _ := readIgnoreFile(dir)
+	rules, err := readIgnoreFile(dir)
+	if err != nil {
+		return nil, err
+	}
 	var result []ComposeFileInfo
 	for _, f := range files {
 		result = append(result, ComposeFileInfo{
@@ -172,15 +177,23 @@ func GetComposeStatus(file string) string {
 		return "stopped"
 	}
 
+	type containerPs struct {
+		State string `json:"State"`
+	}
+
 	var running, total int
 	for _, line := range lines {
 		if line == "" || line == "[]" {
 			continue
 		}
-		if strings.Contains(line, `"State":"running"`) || strings.Contains(line, `"State": "running"`) {
-			running++
+		var c containerPs
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
 		}
 		total++
+		if c.State == "running" {
+			running++
+		}
 	}
 	if total == 0 {
 		return "stopped"
@@ -195,15 +208,15 @@ func GetComposeStatus(file string) string {
 }
 
 // ExecCompose runs docker compose on a single file with given args.
-func ExecCompose(ctx context.Context, file string, args ...string) error {
-	return execCompose(ctx, file, args...)
+func ExecCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
+	return execCompose(ctx, stdout, stderr, file, args...)
 }
 
-func execCompose(ctx context.Context, file string, args ...string) error {
+func execCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
 	cmdArgs := append([]string{"compose", "-f", file}, args...)
 	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	fmt.Printf("Running: docker %s\n", strings.Join(cmdArgs, " "))
 	return cmd.Run()
 }
@@ -221,7 +234,7 @@ func runOnFiles(ctx context.Context, files []string, action string, cmdArgs []st
 		go func(f string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := execCompose(ctx, f, cmdArgs...); err != nil {
+			if err := execCompose(ctx, os.Stdout, os.Stderr, f, cmdArgs...); err != nil {
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("%s: %w", f, err))
 				mu.Unlock()

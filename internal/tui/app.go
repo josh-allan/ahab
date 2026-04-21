@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,12 +225,16 @@ func (m *Model) runAction(action string, args ...string) (tea.Model, tea.Cmd) {
 	if len(m.files) == 0 {
 		return *m, nil
 	}
+	if m.files[m.cursor].ignored {
+		m.statusMsg = "cannot run actions on ignored files"
+		return *m, nil
+	}
 	m.state = stateActionRunning
 	m.statusMsg = fmt.Sprintf("%s %s...", action, filepath.Base(m.files[m.cursor].path))
 	file := m.files[m.cursor].path
 	return *m, func() tea.Msg {
 		ctx := context.Background()
-		if err := ahab.ExecCompose(ctx, file, args...); err != nil {
+		if err := ahab.ExecCompose(ctx, io.Discard, io.Discard, file, args...); err != nil {
 			return errMsg{err}
 		}
 		return actionDoneMsg{fmt.Sprintf("%s done", action)}
@@ -255,7 +260,10 @@ func (m *Model) restartLogStreamer() {
 	}
 	ls := startLogStreamer(m.files[m.cursor].path)
 	m.logStreamer = ls
-	ls.run()
+	if err := ls.run(); err != nil {
+		m.logStreamer = nil
+		m.statusMsg = fmt.Sprintf("log stream error: %v", err)
+	}
 }
 
 func (m *Model) stopLogStreamer() {
