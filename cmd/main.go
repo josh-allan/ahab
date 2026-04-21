@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/fang"
 	ahab "github.com/josh-allan/ahab/pkg"
+	"github.com/josh-allan/ahab/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,12 @@ var rootCmd = &cobra.Command{
 	Use:   "ahab",
 	Short: "Ahoy, Ahab!",
 	Long:  "Ahab is a tool to manage Docker Compose files.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := tui.Run(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
 }
 
 func composeCommand(use, short string, fn func() error) *cobra.Command {
