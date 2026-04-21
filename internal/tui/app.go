@@ -190,7 +190,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loadPreview()
 	case "3":
 		m.pane = modeLogs
-		return m, tea.Batch(m.logTickCmd(), m.restartLogStreamerCmd())
+		m.restartLogStreamer()
+		return m, m.logTickCmd()
 	case "1":
 		m.stopLogStreamer()
 		m.pane = modeInfo
@@ -210,7 +211,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pane = modeInfo
 		} else {
 			m.pane = modeLogs
-			return m, tea.Batch(m.logTickCmd(), m.restartLogStreamerCmd())
+			m.restartLogStreamer()
+			return m, m.logTickCmd()
 		}
 	case "?":
 		m.showHelp = !m.showHelp
@@ -254,13 +256,6 @@ func (m *Model) restartLogStreamer() {
 	ls := startLogStreamer(m.files[m.cursor].path)
 	m.logStreamer = ls
 	ls.run()
-}
-
-func (m Model) restartLogStreamerCmd() tea.Cmd {
-	return func() tea.Msg {
-		m.restartLogStreamer()
-		return nil
-	}
 }
 
 func (m *Model) stopLogStreamer() {
