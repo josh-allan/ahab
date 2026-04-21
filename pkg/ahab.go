@@ -133,6 +133,72 @@ func findComposeFiles(action string) ([]string, error) {
 	return filtered, nil
 }
 
+// ComposeFileInfo holds info about a compose file for the TUI.
+type ComposeFileInfo struct {
+	Path    string
+	Ignored bool
+}
+
+// FindComposeFilesForTUI returns all YAML files in DOCKER_DIR, with ignore status.
+func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
+	dir, err := getDockerDir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := findYAMLFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	rules, _ := readIgnoreFile(dir)
+	var result []ComposeFileInfo
+	for _, f := range files {
+		result = append(result, ComposeFileInfo{
+			Path:    f,
+			Ignored: rules.match(f),
+		})
+	}
+	return result, nil
+}
+
+// GetComposeStatus runs docker compose ps and returns "running", "stopped", "partial", or "unknown".
+func GetComposeStatus(file string) string {
+	cmd := exec.Command("docker", "compose", "-f", file, "ps", "--format", "json")
+	out, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" || lines[0] == "[]" {
+		return "stopped"
+	}
+
+	var running, total int
+	for _, line := range lines {
+		if line == "" || line == "[]" {
+			continue
+		}
+		if strings.Contains(line, `"State":"running"`) || strings.Contains(line, `"State": "running"`) {
+			running++
+		}
+		total++
+	}
+	if total == 0 {
+		return "stopped"
+	}
+	if running == total {
+		return "running"
+	}
+	if running == 0 {
+		return "stopped"
+	}
+	return "partial"
+}
+
+// ExecCompose runs docker compose on a single file with given args.
+func ExecCompose(ctx context.Context, file string, args ...string) error {
+	return execCompose(ctx, file, args...)
+}
+
 func execCompose(ctx context.Context, file string, args ...string) error {
 	cmdArgs := append([]string{"compose", "-f", file}, args...)
 	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
