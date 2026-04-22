@@ -80,10 +80,16 @@ func findYAMLFiles(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (strings.HasPrefix(d.Name(), ".") || d.Name() == "kube") {
-			return filepath.SkipDir
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") || d.Name() == "kube" || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		if !d.IsDir() && yamlRegex.MatchString(d.Name()) {
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		if yamlRegex.MatchString(d.Name()) {
 			files = append(files, path)
 		}
 		return nil

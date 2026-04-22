@@ -23,7 +23,7 @@
 
 - Requires `DOCKER_DIR` env var pointing to the docker compose directory
 - Reads `.ahabignore` from `DOCKER_DIR` — supports exact file matches and directory prefixes (trailing `/`)
-- `findYAMLFiles` recursively finds `.yaml`/`.yml` files using `filepath.WalkDir`, excluding hidden dirs and `kube/`
+- `findYAMLFiles` recursively finds `.yaml`/`.yml` files using `filepath.WalkDir`, excluding hidden dirs/files, `kube/`, and `node_modules/`
 - Compose commands run with concurrency limit (`maxConcurrentCommands = 4`) via buffered channel semaphore
 - Uses `docker compose` (v2 plugin syntax)
 - Errors from parallel goroutines are aggregated via `errors.Join`
