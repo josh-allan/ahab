@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/fang"
+	"github.com/josh-allan/ahab/internal/tui"
 	ahab "github.com/josh-allan/ahab/pkg"
 	"github.com/spf13/cobra"
 )
@@ -15,6 +16,12 @@ var rootCmd = &cobra.Command{
 	Use:   "ahab",
 	Short: "Ahoy, Ahab!",
 	Long:  "Ahab is a tool to manage Docker Compose files.",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := tui.Run(); err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	},
 }
 
 func composeCommand(use, short string, fn func() error) *cobra.Command {
@@ -34,6 +41,7 @@ func init() {
 	rootCmd.AddCommand(composeCommand("start", "Start all Docker Compose files", ahab.RunAllCompose))
 	rootCmd.AddCommand(composeCommand("update", "Update all Docker Compose files", ahab.UpdateAllCompose))
 	rootCmd.AddCommand(composeCommand("stop", "Stop all Docker Compose files", ahab.StopAllCompose))
+	rootCmd.AddCommand(composeCommand("down", "Stop and remove all Docker Compose resources", ahab.StopAllComposeDown))
 	rootCmd.AddCommand(composeCommand("restart", "Restart all Docker Compose files", ahab.RestartAllCompose))
 	rootCmd.AddCommand(composeCommand("list", "List all Docker Compose files", ahab.ListIgnoreFiles))
 }
