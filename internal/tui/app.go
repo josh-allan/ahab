@@ -33,9 +33,8 @@ const (
 )
 
 type composeFile struct {
-	path    string
-	status  string
-	ignored bool
+	path   string
+	status string
 }
 
 type filesLoadedMsg struct{ files []composeFile }
@@ -82,9 +81,8 @@ func fetchFiles() tea.Cmd {
 		var cfs []composeFile
 		for _, info := range infos {
 			cfs = append(cfs, composeFile{
-				path:    info.Path,
-				status:  "unknown",
-				ignored: info.Ignored,
+				path:   info.Path,
+				status: "unknown",
 			})
 		}
 		return filesLoadedMsg{cfs}
@@ -225,10 +223,6 @@ func (m *Model) runAction(action string, args ...string) (tea.Model, tea.Cmd) {
 	if len(m.files) == 0 {
 		return *m, nil
 	}
-	if m.files[m.cursor].ignored {
-		m.statusMsg = "cannot run actions on ignored files"
-		return *m, nil
-	}
 	m.state = stateActionRunning
 	m.statusMsg = fmt.Sprintf("%s %s...", action, filepath.Base(m.files[m.cursor].path))
 	file := m.files[m.cursor].path
@@ -332,9 +326,6 @@ func (m Model) renderList(height int) string {
 			f := m.files[i]
 			indicator := statusIndicator(f.status)
 			name := filepath.Base(f.path)
-			if f.ignored {
-				name += " [ignored]"
-			}
 			line := fmt.Sprintf("%s %s", indicator, name)
 			if i == m.cursor {
 				b.WriteString(selectedStyle.Render(line) + "\n")

@@ -132,11 +132,10 @@ func findComposeFiles(action string) ([]string, error) {
 
 // ComposeFileInfo holds info about a compose file for the TUI.
 type ComposeFileInfo struct {
-	Path    string
-	Ignored bool
+	Path string
 }
 
-// FindComposeFilesForTUI returns all YAML files in DOCKER_DIR, with ignore status.
+// FindComposeFilesForTUI returns all non-ignored YAML files in DOCKER_DIR.
 func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
 	dir, err := getDockerDir()
 	if err != nil {
@@ -152,10 +151,10 @@ func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
 	}
 	var result []ComposeFileInfo
 	for _, f := range files {
-		result = append(result, ComposeFileInfo{
-			Path:    f,
-			Ignored: rules.match(f),
-		})
+		if rules.match(f) {
+			continue
+		}
+		result = append(result, ComposeFileInfo{Path: f})
 	}
 	return result, nil
 }
