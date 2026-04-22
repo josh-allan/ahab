@@ -16,11 +16,7 @@ import (
 	"sync"
 )
 
-var (
-	yamlRegex      = regexp.MustCompile(`\.ya?ml$`)
-	hiddenDirRegex = regexp.MustCompile(`(?:\.[^/]+)/`)
-	kubeDirRegex   = regexp.MustCompile(`/kube(/|$)`)
-)
+var yamlRegex = regexp.MustCompile(`\.ya?ml$`)
 
 const maxConcurrentCommands = 4
 
@@ -84,15 +80,8 @@ func findYAMLFiles(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		checkPath := path
-		if d.IsDir() {
-			checkPath += "/"
-		}
-		if hiddenDirRegex.MatchString(checkPath) || kubeDirRegex.MatchString(checkPath) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
+		if d.IsDir() && (strings.HasPrefix(d.Name(), ".") || d.Name() == "kube") {
+			return filepath.SkipDir
 		}
 		if !d.IsDir() && yamlRegex.MatchString(d.Name()) {
 			files = append(files, path)

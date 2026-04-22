@@ -7,8 +7,8 @@ import (
 	"os"
 
 	"github.com/charmbracelet/fang"
-	ahab "github.com/josh-allan/ahab/pkg"
 	"github.com/josh-allan/ahab/internal/tui"
+	ahab "github.com/josh-allan/ahab/pkg"
 	"github.com/spf13/cobra"
 )
 
