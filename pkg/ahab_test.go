@@ -114,9 +114,9 @@ func Test_findYAMLFiles(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name:      "finds yaml and yml files, excludes hidden and kube dirs",
+			name:      "finds yaml and yml files recursively, excludes hidden dirs/files, kube, and node_modules but includes dirs with dots in their names",
 			dir:       "./testdata",
-			wantNames: []string{"another-service.yml", "docker.yaml", "valid-service.yaml"},
+			wantNames: []string{"another-service.yml", "compose.yaml", "docker.yaml", "valid-service.yaml"},
 			wantErr:   false,
 		},
 		{

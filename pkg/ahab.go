@@ -3,8 +3,10 @@ package ahab
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -14,11 +16,7 @@ import (
 	"sync"
 )
 
-var (
-	yamlRegex      = regexp.MustCompile(`\.ya?ml$`)
-	hiddenDirRegex = regexp.MustCompile(`(?:\.[^/]+)/`)
-	kubeDirRegex   = regexp.MustCompile(`/kube(/|$)`)
-)
+var yamlRegex = regexp.MustCompile(`\.ya?ml$`)
 
 const maxConcurrentCommands = 4
 
@@ -82,17 +80,16 @@ func findYAMLFiles(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		checkPath := path
 		if d.IsDir() {
-			checkPath += "/"
-		}
-		if hiddenDirRegex.MatchString(checkPath) || kubeDirRegex.MatchString(checkPath) {
-			if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") || d.Name() == "kube" || d.Name() == "node_modules" {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !d.IsDir() && yamlRegex.MatchString(d.Name()) {
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		if yamlRegex.MatchString(d.Name()) {
 			files = append(files, path)
 		}
 		return nil
@@ -133,11 +130,87 @@ func findComposeFiles(action string) ([]string, error) {
 	return filtered, nil
 }
 
-func execCompose(ctx context.Context, file string, args ...string) error {
+// ComposeFileInfo holds info about a compose file for the TUI.
+type ComposeFileInfo struct {
+	Path string
+}
+
+// FindComposeFilesForTUI returns all non-ignored YAML files in DOCKER_DIR.
+func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
+	dir, err := getDockerDir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := findYAMLFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := readIgnoreFile(dir)
+	if err != nil {
+		return nil, err
+	}
+	var result []ComposeFileInfo
+	for _, f := range files {
+		if rules.match(f) {
+			continue
+		}
+		result = append(result, ComposeFileInfo{Path: f})
+	}
+	return result, nil
+}
+
+// GetComposeStatus runs docker compose ps and returns "running", "stopped", "partial", or "unknown".
+func GetComposeStatus(file string) string {
+	cmd := exec.Command("docker", "compose", "-f", file, "ps", "--format", "json")
+	out, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" || lines[0] == "[]" {
+		return "stopped"
+	}
+
+	type containerPs struct {
+		State string `json:"State"`
+	}
+
+	var running, total int
+	for _, line := range lines {
+		if line == "" || line == "[]" {
+			continue
+		}
+		var c containerPs
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
+		}
+		total++
+		if c.State == "running" {
+			running++
+		}
+	}
+	if total == 0 {
+		return "stopped"
+	}
+	if running == total {
+		return "running"
+	}
+	if running == 0 {
+		return "stopped"
+	}
+	return "partial"
+}
+
+// ExecCompose runs docker compose on a single file with given args.
+func ExecCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
+	return execCompose(ctx, stdout, stderr, file, args...)
+}
+
+func execCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
 	cmdArgs := append([]string{"compose", "-f", file}, args...)
 	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	fmt.Printf("Running: docker %s\n", strings.Join(cmdArgs, " "))
 	return cmd.Run()
 }
@@ -155,7 +228,7 @@ func runOnFiles(ctx context.Context, files []string, action string, cmdArgs []st
 		go func(f string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := execCompose(ctx, f, cmdArgs...); err != nil {
+			if err := execCompose(ctx, os.Stdout, os.Stderr, f, cmdArgs...); err != nil {
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("%s: %w", f, err))
 				mu.Unlock()
