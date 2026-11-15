@@ -1,197 +1,86 @@
 package ahab
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
-	"sort"
 	"testing"
 )
 
-func Test_ignoreRules_match(t *testing.T) {
-	rules := ignoreRules{
-		exact: map[string]struct{}{
-			"/docker/test1.yaml": {},
-		},
-		prefixes: []string{
-			"/docker/home-assistant/",
-		},
-	}
-
-	tests := []struct {
-		name string
-		path string
-		want bool
-	}{
-		{
-			name: "exact match",
-			path: "/docker/test1.yaml",
-			want: true,
-		},
-		{
-			name: "prefix match",
-			path: "/docker/home-assistant/docker.yaml",
-			want: true,
-		},
-		{
-			name: "no match",
-			path: "/docker/valid-service.yaml",
-			want: false,
-		},
-		{
-			name: "empty rules",
-			path: "/docker/anything.yaml",
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := rules.match(tt.path); got != tt.want {
-				t.Errorf("ignoreRules.match(%q) = %v, want %v", tt.path, got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_readIgnoreFile(t *testing.T) {
+func TestGetDockerDir(t *testing.T) {
 	tests := []struct {
 		name    string
-		dir     string
-		want    ignoreRules
+		env     string
 		wantErr bool
 	}{
-		{
-			name: "valid directory with patterns",
-			dir:  "./testdata",
-			want: ignoreRules{
-				exact: map[string]struct{}{
-					"test1.yaml": {},
-					"test2.yaml": {},
-				},
-				prefixes: []string{
-					"home-assistant/",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:    "non-existent directory returns empty rules",
-			dir:     "./non_existent_dir",
-			want:    ignoreRules{exact: map[string]struct{}{}, prefixes: nil},
-			wantErr: false,
-		},
-		{
-			name:    "empty directory returns empty rules",
-			dir:     "./testdata/empty",
-			want:    ignoreRules{exact: map[string]struct{}{}, prefixes: nil},
-			wantErr: false,
-		},
+		{name: "unset", env: "", wantErr: true},
+		{name: "missing dir", env: "/nonexistent/ahab/dir", wantErr: true},
+		{name: "valid dir", env: t.TempDir()},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := readIgnoreFile(tt.dir)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("readIgnoreFile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got.exact, tt.want.exact) {
-				t.Errorf("readIgnoreFile() exact = %v, want %v", got.exact, tt.want.exact)
-			}
-			if !reflect.DeepEqual(got.prefixes, tt.want.prefixes) {
-				t.Errorf("readIgnoreFile() prefixes = %v, want %v", got.prefixes, tt.want.prefixes)
-			}
-		})
-	}
-}
-
-func Test_findYAMLFiles(t *testing.T) {
-	tests := []struct {
-		name      string
-		dir       string
-		wantNames []string
-		wantErr   bool
-	}{
-		{
-			name:      "finds yaml and yml files recursively, excludes hidden dirs/files, kube, and node_modules but includes dirs with dots in their names",
-			dir:       "./testdata",
-			wantNames: []string{"another-service.yml", "compose.yaml", "docker.yaml", "valid-service.yaml"},
-			wantErr:   false,
-		},
-		{
-			name:    "non-existent directory returns error",
-			dir:     "./non_existent_dir",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := findYAMLFiles(tt.dir)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("findYAMLFiles() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if tt.wantErr {
-				return
-			}
-			var gotNames []string
-			for _, f := range got {
-				gotNames = append(gotNames, filepath.Base(f))
-			}
-			sort.Strings(gotNames)
-			wantSorted := make([]string, len(tt.wantNames))
-			copy(wantSorted, tt.wantNames)
-			sort.Strings(wantSorted)
-			if !reflect.DeepEqual(gotNames, wantSorted) {
-				t.Errorf("findYAMLFiles() names = %v, want %v", gotNames, wantSorted)
-			}
-		})
-	}
-}
-
-func Test_getDockerDir(t *testing.T) {
-	tests := []struct {
-		name    string
-		envVal  string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "unset DOCKER_DIR returns error",
-			envVal:  "",
-			want:    "",
-			wantErr: true,
-		},
-		{
-			name:    "invalid path returns error",
-			envVal:  "/nonexistent/path/that/does/not/exist",
-			want:    "",
-			wantErr: true,
-		},
-		{
-			name:    "valid directory returns path",
-			envVal:  "./testdata",
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			orig := os.Getenv("DOCKER_DIR")
-			defer os.Setenv("DOCKER_DIR", orig)
-			os.Setenv("DOCKER_DIR", tt.envVal)
+			t.Setenv("DOCKER_DIR", tt.env)
 			got, err := getDockerDir()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("getDockerDir() error = %v, wantErr %v", err, tt.wantErr)
-				return
+				t.Fatalf("getDockerDir() err = %v, wantErr %v", err, tt.wantErr)
 			}
-			if tt.wantErr {
-				return
+			if !tt.wantErr && got != tt.env {
+				t.Errorf("getDockerDir() = %q, want %q", got, tt.env)
 			}
-			if got == "" {
-				t.Errorf("getDockerDir() returned empty string for valid dir")
+		})
+	}
+}
+
+func TestComposeArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		stack Stack
+		args  []string
+		want  []string
+	}{
+		{
+			name:  "with context",
+			stack: Stack{Context: "default", File: "/d/ha/compose.yaml"},
+			args:  []string{"up", "-d"},
+			want:  []string{"--context", "default", "compose", "-f", "/d/ha/compose.yaml", "up", "-d"},
+		},
+		{
+			name:  "current context",
+			stack: Stack{File: "/d/x.yaml"},
+			args:  []string{"pull"},
+			want:  []string{"compose", "-f", "/d/x.yaml", "pull"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ComposeArgs(tt.stack, tt.args...); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ComposeArgs = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateRecreatesAfterPull(t *testing.T) {
+	want := [][]string{{"pull", "--ignore-buildable"}, {"build", "--pull"}, {"up", "-d"}}
+	if !reflect.DeepEqual(Update.Steps, want) {
+		t.Errorf("Update.Steps = %q, want %q", Update.Steps, want)
+	}
+}
+
+func TestStatusOf(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{name: "no containers", out: "", want: "stopped"},
+		{name: "empty array", out: "[]\n", want: "stopped"},
+		{name: "all running", out: `{"State":"running"}` + "\n" + `{"State":"running"}` + "\n", want: "running"},
+		{name: "some running", out: `{"State":"running"}` + "\n" + `{"State":"exited"}` + "\n", want: "partial"},
+		{name: "none running", out: `{"State":"exited"}` + "\n", want: "stopped"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := statusOf([]byte(tt.out)); got != tt.want {
+				t.Errorf("statusOf(%q) = %q, want %q", tt.out, got, tt.want)
 			}
 		})
 	}

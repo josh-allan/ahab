@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -33,9 +34,12 @@ const (
 )
 
 type composeFile struct {
-	path   string
+	stack  ahab.Stack
 	status string
 }
+
+// name is the stack's directory, since most compose files share a basename.
+func (f composeFile) name() string { return filepath.Base(filepath.Dir(f.stack.File)) }
 
 type filesLoadedMsg struct{ files []composeFile }
 type actionDoneMsg struct{ msg string }
@@ -74,16 +78,13 @@ func (m Model) Init() tea.Cmd {
 
 func fetchFiles() tea.Cmd {
 	return func() tea.Msg {
-		infos, err := ahab.FindComposeFilesForTUI()
+		stacks, err := ahab.LoadCatalogue()
 		if err != nil {
 			return errMsg{err}
 		}
-		var cfs []composeFile
-		for _, info := range infos {
-			cfs = append(cfs, composeFile{
-				path:   info.Path,
-				status: "unknown",
-			})
+		cfs := make([]composeFile, len(stacks))
+		for i, s := range stacks {
+			cfs[i] = composeFile{stack: s, status: "unknown"}
 		}
 		return filesLoadedMsg{cfs}
 	}
@@ -94,7 +95,7 @@ func refreshStatuses(files []composeFile) tea.Cmd {
 		updated := make([]composeFile, len(files))
 		copy(updated, files)
 		for i := range updated {
-			updated[i].status = ahab.GetComposeStatus(updated[i].path)
+			updated[i].status = ahab.Status(updated[i].stack)
 		}
 		return filesLoadedMsg{files: updated}
 	}
@@ -195,15 +196,15 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogStreamer()
 		m.pane = modeInfo
 	case "s":
-		return m.runAction("start", "up", "-d")
+		return m.runAction(ahab.Start)
 	case "x":
-		return m.runAction("stop", "stop")
+		return m.runAction(ahab.Stop)
 	case "d":
-		return m.runAction("down", "down")
+		return m.runAction(ahab.Down)
 	case "r":
-		return m.runAction("restart", "restart")
-	case "p":
-		return m.runAction("pull", "pull")
+		return m.runAction(ahab.Restart)
+	case "u":
+		return m.runAction(ahab.Update)
 	case "l":
 		if m.pane == modeLogs {
 			m.stopLogStreamer()
@@ -219,19 +220,18 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) runAction(action string, args ...string) (tea.Model, tea.Cmd) {
+func (m *Model) runAction(a ahab.Action) (tea.Model, tea.Cmd) {
 	if len(m.files) == 0 {
 		return *m, nil
 	}
+	f := m.files[m.cursor]
 	m.state = stateActionRunning
-	m.statusMsg = fmt.Sprintf("%s %s...", action, filepath.Base(m.files[m.cursor].path))
-	file := m.files[m.cursor].path
+	m.statusMsg = fmt.Sprintf("%s %s...", a.Name, f.name())
 	return *m, func() tea.Msg {
-		ctx := context.Background()
-		if err := ahab.ExecCompose(ctx, io.Discard, io.Discard, file, args...); err != nil {
+		if err := a.RunOn(context.Background(), io.Discard, io.Discard, f.stack); err != nil {
 			return errMsg{err}
 		}
-		return actionDoneMsg{fmt.Sprintf("%s done", action)}
+		return actionDoneMsg{a.Name + " done"}
 	}
 }
 
@@ -239,7 +239,7 @@ func (m *Model) loadPreview() {
 	if m.preview != "" || len(m.files) == 0 {
 		return
 	}
-	data, err := os.ReadFile(m.files[m.cursor].path)
+	data, err := os.ReadFile(m.files[m.cursor].stack.File)
 	if err != nil {
 		m.preview = fmt.Sprintf("error reading file: %v", err)
 		return
@@ -252,12 +252,12 @@ func (m *Model) restartLogStreamer() {
 	if len(m.files) == 0 {
 		return
 	}
-	ls := startLogStreamer(m.files[m.cursor].path)
-	m.logStreamer = ls
-	if err := ls.run(); err != nil {
-		m.logStreamer = nil
+	ls, err := startLogStreamer(m.files[m.cursor].stack)
+	if err != nil {
 		m.statusMsg = fmt.Sprintf("log stream error: %v", err)
+		return
 	}
+	m.logStreamer = ls
 }
 
 func (m *Model) stopLogStreamer() {
@@ -278,7 +278,7 @@ func (m Model) View() string {
 		return "loading..."
 	}
 	if m.state == stateLoading {
-		return fmt.Sprintf("\n  %s loading compose files...\n\n  press q to quit", m.spinner.View())
+		return fmt.Sprintf("\n  %s loading catalogue...\n\n  press q to quit", m.spinner.View())
 	}
 	if m.state == stateError {
 		return errorStyle.Render("error: "+m.errMsg) + "\n" +
@@ -307,7 +307,7 @@ func (m Model) renderList(height int) string {
 	b.WriteString(titleStyle.Render("ahab") + "\n\n")
 
 	if len(m.files) == 0 {
-		b.WriteString(dimStyle.Render("  no compose files found") + "\n")
+		b.WriteString(dimStyle.Render("  no catalogued stacks") + "\n")
 	} else {
 		maxRows := height - 4
 		if maxRows < 1 {
@@ -324,9 +324,7 @@ func (m Model) renderList(height int) string {
 
 		for i := start; i < end; i++ {
 			f := m.files[i]
-			indicator := statusIndicator(f.status)
-			name := filepath.Base(f.path)
-			line := fmt.Sprintf("%s %s", indicator, name)
+			line := fmt.Sprintf("%s %s", statusIndicator(f.status), f.name())
 			if i == m.cursor {
 				b.WriteString(selectedStyle.Render(line) + "\n")
 			} else {
@@ -356,9 +354,10 @@ func (m Model) renderInfo(height int) string {
 		return b.String()
 	}
 	f := m.files[m.cursor]
-	b.WriteString(normalStyle.Render(fmt.Sprintf("Path:   %s", f.path)) + "\n")
-	b.WriteString(normalStyle.Render(fmt.Sprintf("Status: %s", f.status)) + "\n\n")
-	b.WriteString(helpStyle.Render("s start  x stop  d down  r restart  p pull  l logs"))
+	b.WriteString(normalStyle.Render("Path:    "+f.stack.File) + "\n")
+	b.WriteString(normalStyle.Render("Context: "+cmp.Or(f.stack.Context, "(current)")) + "\n")
+	b.WriteString(normalStyle.Render("Status:  "+f.status) + "\n\n")
+	b.WriteString(helpStyle.Render("s start  x stop  d down  r restart  u update  l logs"))
 	return b.String()
 }
 
@@ -409,7 +408,7 @@ func (m Model) renderHelpOverlay(background string) string {
   x            stop
   d            down
   r            restart
-  p            pull
+  u            update (pull + build + up -d)
   l            toggle logs
   ?            toggle help
   q/ctrl+c     quit
