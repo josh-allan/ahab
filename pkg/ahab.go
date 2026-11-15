@@ -1,187 +1,132 @@
+// Package ahab runs docker compose operations across a catalogue of stacks.
 package ahab
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 )
 
-var yamlRegex = regexp.MustCompile(`\.ya?ml$`)
-
 const maxConcurrentCommands = 4
 
-type ignoreRules struct {
-	exact    map[string]struct{}
-	prefixes []string
+// Action is a named operation: compose argument lists run in order per stack.
+type Action struct {
+	Name  string
+	Steps [][]string
 }
 
-func (r ignoreRules) match(path string) bool {
-	if _, ok := r.exact[path]; ok {
-		return true
-	}
-	for _, prefix := range r.prefixes {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func readIgnoreFile(dir string) (ignoreRules, error) {
-	ignorePath := filepath.Join(dir, ".ahabignore")
-	file, err := os.Open(ignorePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ignoreRules{exact: map[string]struct{}{}}, nil
-		}
-		return ignoreRules{}, err
-	}
-	defer file.Close()
-
-	rules := ignoreRules{exact: make(map[string]struct{})}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasSuffix(line, "/") {
-			rules.prefixes = append(rules.prefixes, line)
-		} else {
-			rules.exact[line] = struct{}{}
-		}
-	}
-	return rules, scanner.Err()
-}
+var (
+	Start = Action{Name: "start", Steps: [][]string{{"up", "-d"}}}
+	// Update pulls registry images, rebuilds local ones against fresh base
+	// images, then recreates changed containers. A container keeps the image
+	// it was created from, so only the `up -d` step makes a reboot come back
+	// on the new version.
+	Update  = Action{Name: "update", Steps: [][]string{{"pull", "--ignore-buildable"}, {"build", "--pull"}, {"up", "-d"}}}
+	Stop    = Action{Name: "stop", Steps: [][]string{{"stop"}}}
+	Down    = Action{Name: "down", Steps: [][]string{{"down"}}}
+	Restart = Action{Name: "restart", Steps: [][]string{{"restart"}}}
+)
 
 func getDockerDir() (string, error) {
-	if dir := os.Getenv("DOCKER_DIR"); dir != "" {
-		if _, err := os.Stat(dir); err == nil {
-			return dir, nil
-		}
-		return "", fmt.Errorf("docker directory from DOCKER_DIR does not exist: %s", dir)
+	dir := os.Getenv("DOCKER_DIR")
+	if dir == "" {
+		return "", errors.New("DOCKER_DIR environment variable is not set")
 	}
-	return "", fmt.Errorf("DOCKER_DIR environment variable is not set")
+	if _, err := os.Stat(dir); err != nil {
+		return "", fmt.Errorf("DOCKER_DIR: %w", err)
+	}
+	return dir, nil
 }
 
-func findYAMLFiles(dir string) ([]string, error) {
-	var files []string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+// ComposeArgs returns the docker argv that runs compose args against s.
+func ComposeArgs(s Stack, args ...string) []string {
+	var out []string
+	if s.Context != "" {
+		out = append(out, "--context", s.Context)
+	}
+	out = append(out, "compose", "-f", s.File)
+	return append(out, args...)
+}
+
+// RunOn runs a's steps on s in order, stopping at the first failure.
+func (a Action) RunOn(ctx context.Context, stdout, stderr io.Writer, s Stack) error {
+	for _, step := range a.Steps {
+		argv := ComposeArgs(s, step...)
+		if _, err := fmt.Fprintf(stdout, "Running: docker %s\n", strings.Join(argv, " ")); err != nil {
 			return err
 		}
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") || d.Name() == "kube" || d.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
+		cmd := exec.CommandContext(ctx, "docker", argv...)
+		cmd.Stdout, cmd.Stderr = stdout, stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("%s: %s: %w", s.File, strings.Join(step, " "), err)
 		}
-		if strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
-		if yamlRegex.MatchString(d.Name()) {
-			files = append(files, path)
-		}
-		return nil
-	})
-	return files, err
+	}
+	return nil
 }
 
-func findComposeFiles(action string) ([]string, error) {
+// Run applies a to the catalogue, or to files when given, at most
+// maxConcurrentCommands stacks at a time. contextFlag overrides each
+// target's docker context.
+func Run(a Action, files []string, contextFlag string) error {
 	dir, err := getDockerDir()
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	fmt.Printf("Finding Docker Compose files to %s...\n", action)
-	files, err := findYAMLFiles(dir)
+	stacks, err := resolveTargets(dir, files, contextFlag)
 	if err != nil {
-		return nil, err
-	}
-	if len(files) == 0 {
-		fmt.Printf("No Docker Compose files found to %s.\n", action)
-		return []string{}, nil
+		return err
 	}
 
-	rules, err := readIgnoreFile(dir)
-	if err != nil {
-		return nil, err
+	fmt.Printf("Running %s on %d stack(s)...\n", a.Name, len(stacks))
+	sem := make(chan struct{}, maxConcurrentCommands)
+	errs := make([]error, len(stacks))
+	var wg sync.WaitGroup
+	for i, s := range stacks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			errs[i] = a.RunOn(context.Background(), os.Stdout, os.Stderr, s)
+		}()
 	}
-
-	var filtered []string
-	for _, file := range files {
-		if rules.match(file) {
-			fmt.Printf("Skipping %s (ignored by .ahabignore)\n", file)
-			continue
-		}
-		filtered = append(filtered, file)
-	}
-
-	return filtered, nil
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
-// ComposeFileInfo holds info about a compose file for the TUI.
-type ComposeFileInfo struct {
-	Path string
+// List prints each catalogued stack with its context.
+func List() error {
+	stacks, err := LoadCatalogue()
+	if err != nil {
+		return err
+	}
+	for _, s := range stacks {
+		fmt.Printf("%-10s %s\n", s.Context, s.File)
+	}
+	return nil
 }
 
-// FindComposeFilesForTUI returns all non-ignored YAML files in DOCKER_DIR.
-func FindComposeFilesForTUI() ([]ComposeFileInfo, error) {
-	dir, err := getDockerDir()
-	if err != nil {
-		return nil, err
-	}
-	files, err := findYAMLFiles(dir)
-	if err != nil {
-		return nil, err
-	}
-	rules, err := readIgnoreFile(dir)
-	if err != nil {
-		return nil, err
-	}
-	var result []ComposeFileInfo
-	for _, f := range files {
-		if rules.match(f) {
-			continue
-		}
-		result = append(result, ComposeFileInfo{Path: f})
-	}
-	return result, nil
-}
-
-// GetComposeStatus runs docker compose ps and returns "running", "stopped", "partial", or "unknown".
-func GetComposeStatus(file string) string {
-	cmd := exec.Command("docker", "compose", "-f", file, "ps", "--format", "json")
-	out, err := cmd.Output()
+// Status reports "running", "partial", "stopped", or "unknown" for s.
+func Status(s Stack) string {
+	out, err := exec.Command("docker", ComposeArgs(s, "ps", "--all", "--format", "json")...).Output()
 	if err != nil {
 		return "unknown"
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 0 || lines[0] == "" || lines[0] == "[]" {
-		return "stopped"
-	}
+	return statusOf(out)
+}
 
-	type containerPs struct {
-		State string `json:"State"`
-	}
-
+// statusOf classifies `compose ps --format json` output (one object per line).
+func statusOf(out []byte) string {
 	var running, total int
-	for _, line := range lines {
-		if line == "" || line == "[]" {
-			continue
-		}
-		var c containerPs
-		if err := json.Unmarshal([]byte(line), &c); err != nil {
+	for _, line := range strings.Split(string(out), "\n") {
+		var c struct{ State string }
+		if json.Unmarshal([]byte(line), &c) != nil {
 			continue
 		}
 		total++
@@ -189,102 +134,12 @@ func GetComposeStatus(file string) string {
 			running++
 		}
 	}
-	if total == 0 {
+	switch running {
+	case 0:
 		return "stopped"
-	}
-	if running == total {
+	case total:
 		return "running"
+	default:
+		return "partial"
 	}
-	if running == 0 {
-		return "stopped"
-	}
-	return "partial"
-}
-
-// ExecCompose runs docker compose on a single file with given args.
-func ExecCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
-	return execCompose(ctx, stdout, stderr, file, args...)
-}
-
-func execCompose(ctx context.Context, stdout, stderr io.Writer, file string, args ...string) error {
-	cmdArgs := append([]string{"compose", "-f", file}, args...)
-	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	fmt.Printf("Running: docker %s\n", strings.Join(cmdArgs, " "))
-	return cmd.Run()
-}
-
-func runOnFiles(ctx context.Context, files []string, action string, cmdArgs []string) error {
-	fmt.Printf("%s docker compose for each file...\n", action)
-	sem := make(chan struct{}, maxConcurrentCommands)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var errs []error
-
-	for _, file := range files {
-		sem <- struct{}{}
-		wg.Add(1)
-		go func(f string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			if err := execCompose(ctx, os.Stdout, os.Stderr, f, cmdArgs...); err != nil {
-				mu.Lock()
-				errs = append(errs, fmt.Errorf("%s: %w", f, err))
-				mu.Unlock()
-			}
-		}(file)
-	}
-
-	wg.Wait()
-	return errors.Join(errs...)
-}
-
-func runAction(action string, cmdArgs ...string) error {
-	ctx := context.Background()
-	files, err := findComposeFiles(action)
-	if err != nil {
-		return err
-	}
-	if len(files) == 0 {
-		return nil
-	}
-	return runOnFiles(ctx, files, action, cmdArgs)
-}
-
-func RunAllCompose() error      { return runAction("start", "up", "-d") }
-func UpdateAllCompose() error   { return runAction("update", "pull") }
-func StopAllCompose() error     { return runAction("stop", "stop") }
-func StopAllComposeDown() error { return runAction("down", "down") }
-func RestartAllCompose() error  { return runAction("restart", "restart") }
-
-func ListIgnoreFiles() error {
-	dir, err := getDockerDir()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Listing Docker Compose files...")
-	files, err := findYAMLFiles(dir)
-	if err != nil {
-		return err
-	}
-	if len(files) == 0 {
-		fmt.Println("No Docker Compose files found.")
-		return nil
-	}
-
-	rules, err := readIgnoreFile(dir)
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		if rules.match(file) {
-			fmt.Printf("  [ignored] %s\n", file)
-		} else {
-			fmt.Printf("  %s\n", file)
-		}
-	}
-	return nil
 }

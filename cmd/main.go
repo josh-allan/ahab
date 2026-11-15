@@ -15,35 +15,52 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "ahab",
 	Short: "Ahoy, Ahab!",
-	Long:  "Ahab is a tool to manage Docker Compose files.",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := tui.Run(); err != nil {
-			fmt.Println("Error:", err)
-			os.Exit(1)
-		}
-	},
+	Long:  "Ahab manages Docker Compose stacks in bulk. Bulk commands act on the stacks listed in $DOCKER_DIR/.ahabstacks; pass compose files to target others.",
 }
 
-func composeCommand(use, short string, fn func() error) *cobra.Command {
-	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := fn(); err != nil {
-				fmt.Println("Error:", err)
-				os.Exit(1)
-			}
-		},
+func exitOnError(err error) {
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
 	}
 }
 
+func actionCommand(a ahab.Action, short string) *cobra.Command {
+	var dockerContext string
+	cmd := &cobra.Command{
+		Use:   a.Name + " [compose-file...]",
+		Short: short,
+		Run: func(cmd *cobra.Command, args []string) {
+			exitOnError(ahab.Run(a, args, dockerContext))
+		},
+	}
+	cmd.Flags().StringVar(&dockerContext, "context", "", "docker context for the given files (default: catalogue entry, else current context)")
+	return cmd
+}
+
 func init() {
-	rootCmd.AddCommand(composeCommand("start", "Start all Docker Compose files", ahab.RunAllCompose))
-	rootCmd.AddCommand(composeCommand("update", "Update all Docker Compose files", ahab.UpdateAllCompose))
-	rootCmd.AddCommand(composeCommand("stop", "Stop all Docker Compose files", ahab.StopAllCompose))
-	rootCmd.AddCommand(composeCommand("down", "Stop and remove all Docker Compose resources", ahab.StopAllComposeDown))
-	rootCmd.AddCommand(composeCommand("restart", "Restart all Docker Compose files", ahab.RestartAllCompose))
-	rootCmd.AddCommand(composeCommand("list", "List all Docker Compose files", ahab.ListIgnoreFiles))
+	rootCmd.AddCommand(
+		actionCommand(ahab.Start, "Start catalogued stacks (up -d)"),
+		actionCommand(ahab.Update, "Pull, rebuild and recreate catalogued stacks"),
+		actionCommand(ahab.Stop, "Stop catalogued stacks"),
+		actionCommand(ahab.Down, "Stop and remove catalogued stacks"),
+		actionCommand(ahab.Restart, "Restart catalogued stacks"),
+		&cobra.Command{
+			Use:   "list",
+			Short: "List catalogued stacks and their contexts",
+			Run:   func(cmd *cobra.Command, args []string) { exitOnError(ahab.List()) },
+		},
+		&cobra.Command{
+			Use:   "snapshot",
+			Short: "Regenerate .ahabstacks from the compose stacks running in every docker context",
+			Run:   func(cmd *cobra.Command, args []string) { exitOnError(ahab.Snapshot()) },
+		},
+		&cobra.Command{
+			Use:   "tui",
+			Short: "Browse and manage catalogued stacks interactively",
+			Run:   func(cmd *cobra.Command, args []string) { exitOnError(tui.Run()) },
+		},
+	)
 }
 
 func main() {
