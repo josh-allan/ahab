@@ -1,0 +1,8 @@
+amends "package://github.com/jdx/hk/releases/download/v2.12.0/hk@2.12.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.12.0/hk@2.12.0#/Builtins.pkl"
+
+steps {
+  ["go-fmt"] = Builtins.go_fmt
+  ["go-vet"] = Builtins.go_vet
+  ["golangci-lint"] = Builtins.golangci_lint
+}
